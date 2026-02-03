@@ -2,20 +2,32 @@
 
 [![Android CI/CD](https://github.com/hslcrb/Rivery_aIOStyleCamerApp/actions/workflows/android.yml/badge.svg)](https://github.com/hslcrb/Rivery_aIOStyleCamerApp/actions/workflows/android.yml)
 
-An elegant, iPhone-style camera application for Android, built with **Kotlin** and **Jetpack Compose**. Rivery offers a premium photography experience with a minimalist interface and powerful features.
+An elegant, iPhone-style camera application for Android, built with **Kotlin** and **Jetpack Compose**. Rivery offers a premium photography experience with a minimalist interface, advanced controls, and enterprise-grade performance.
 
 > Developed by **Rheehose (Rhee Creative)**, 2008-2026.
 
 ## ✨ Features
 
-- **iOS-inspired UI/UX**: Premium, minimalist design with smooth animations.
-- **Dynamic Controls**:
-  - Focus & Exposure: Tap-to-focus with visual feedback.
-  - Zoom Switcher: Quick toggle between 0.5x, 1x, 2x, and 5x.
-  - Multi-Flash Modes: Off, On, and Auto support.
-- **Multilingual Support**: Supports **English, Korean, and Japanese** with in-app language switching.
-- **CameraX Integration**: Robust and reliable camera performance across Android devices.
-- **CI/CD Built-in**: Automatic APK builds (Debug/Release) and Docker container distribution via GitHub Actions.
+- **Premium UI/UX**:
+  - **Glassmorphism Design**: Sleek, semi-transparent overlays and smooth animations.
+  - **iOS-style Interface**: Refined icons, typography, and layout.
+  - **Live Interactions**: Real-time shutter animations and fluid transitions.
+
+- **Pro Camera Controls**:
+  - **Ultra-wide Support**: Automatically enables **0.5x zoom** on supported devices.
+  - **Zoom Switcher**: Quick toggle between 0.5x, 1x, 2x, and 5x.
+  - **Exposure Control**: Tap to focus, then vertical drag to adjust exposure (EV) with visual Sun indicator.
+  - **Smart Flash**: Synchronized shutter and flash handling (Off / On / Auto).
+
+- **Advanced Features**:
+  - **Resolution Settings**: Choose between **High Res** (Max Quality) and **Balanced** modes.
+  - **Built-in Gallery**: Integrated gallery with MediaStore support for fast photo viewing.
+  - **Multilingual**: Full support for **English, Korean (한국어), and Japanese (日本語)** with instant switching.
+  - **Persistent Settings**: Remembers your quality and language preferences.
+
+- **Technical Excellence**:
+  - Powered by **Jetpack CameraX** and **Coil**.
+  - **CI/CD Automation**: Auto-builds APKs and Docker containers via GitHub Actions.
 
 ## 🚀 Installation & Build
 
@@ -33,7 +45,8 @@ cd Rivery_aIOStyleCamerApp
 - **Language**: Kotlin
 - **UI Framework**: Jetpack Compose
 - **Camera API**: Jetpack CameraX
-- **Dependency Management**: Gradle Kotlin DSL
+- **Image Loading**: Coil
+- **Architecture**: MVVM / Clean Architecture Principles
 - **CI/CD**: GitHub Actions
 
 ## 📜 License
@@ -45,20 +58,32 @@ Apache License 2.0. See [LICENSE](LICENSE) for details.
 
 # Rivery 카메라 앱
 
-**Kotlin**과 **Jetpack Compose**를 사용하여 제작된 안드로이드용 iPhone 스타일 카메라 애플리케이션입니다. Rivery는 미니멀한 인터페이스와 강력한 기능을 통해 프리미엄 사진 촬영 경험을 제공합니다.
+**Kotlin**과 **Jetpack Compose**를 사용하여 제작된 안드로이드용 iPhone 스타일 프리미엄 카메라 애플리케이션입니다. Rivery는 미니멀하고 세련된 디자인과 전문가급 기능을 통해 최고의 촬영 경험을 제공합니다.
 
 > 제작: **Rheehose (Rhee Creative)**, 2008-2026.
 
 ## ✨ 주요 기능
 
-- **iOS 스타일 UI/UX**: 매끄러운 애니메이션과 미니멀한 프리미엄 디자인.
-- **동적 컨트롤**:
-  - 초점 및 노출: 시각적 피드백이 포함된 탭-투-포커스.
-  - 줌 스위처: 0.5x, 1x, 2x, 5x 빠른 전환.
-  - 다양한 플래시 모드: 끄기, 켜기, 자동 지원.
-- **다국어 지원**: **한국어, 영어, 일본어** 지원 및 앱 내 언어 설정 기능.
-- **CameraX 통합**: 다양한 안드로이드 기기에서 안정적인 카메라 성능 보장.
-- **CI/CD 자동화**: GitHub Actions를 통한 APK(Debug/Release) 자동 빌드 및 Docker 컨테이너 배포.
+- **프리미엄 UI/UX**:
+  - **글래스모피즘 디자인**: 반투명 블러 효과와 부드러운 애니메이션 적용.
+  - **iOS 스타일 인터페이스**: 세련된 아이콘, 타이포그래피 및 레이아웃.
+  - **라이브 인터랙션**: 실시간 셔터 반응 및 유려한 화면 전환.
+
+- **프로 카메라 컨트롤**:
+  - **초광각 지원**: 기기 지원 시 **0.5x 줌** 버튼 자동 활성화.
+  - **줌 스위처**: 0.5x, 1x, 2x, 5x 배율 간 빠른 전환.
+  - **노출 보정 (EV)**: 터치 포커스 후 상하 드래그로 밝기 조절 (해 모양 인디케이터).
+  - **스마트 플래시**: 셔터와 완벽하게 동기화되는 플래시 제어 (끄기 / 켜기 / 자동).
+
+- **고급 기능**:
+  - **화질 설정**: **고해상도 (High Res)** 및 **일반 (Balanced)** 모드 선택 기능.
+  - **내장 갤러리**: MediaStore 기반의 통합 갤러리로 빠른 사진 확인.
+  - **다국어 지원**: **한국어, 영어, 일본어** 완벽 지원 및 즉시 언어 변경.
+  - **설정 유지**: 사용자가 선택한 화질 및 언어 설정을 자동 저장.
+
+- **기술적 우수성**:
+  - **Jetpack CameraX** 및 **Coil** 라이브러리 기반.
+  - **CI/CD 자동화**: GitHub Actions를 통한 APK 및 Docker 컨테이너 자동 빌드/배포.
 
 ## 🚀 설치 및 빌드
 
