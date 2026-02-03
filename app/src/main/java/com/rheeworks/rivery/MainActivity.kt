@@ -1,10 +1,10 @@
 package com.rheeworks.rivery
 
 import android.Manifest
+import android.content.Context
 import android.os.Bundle
 import android.view.ViewGroup
 import androidx.activity.compose.setContent
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.camera.core.*
@@ -18,10 +18,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -51,27 +49,24 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.core.content.ContextCompat
 import androidx.core.os.LocaleListCompat
+import com.google.accompanist.permissions.ExperimentalPermissionsApi
+import com.google.accompanist.permissions.isGranted
+import com.google.accompanist.permissions.rememberPermissionState
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
-// Changed to AppCompatActivity for modern Localization support
 class MainActivity : AppCompatActivity() {
     private lateinit var cameraExecutor: ExecutorService
-
-    private val requestPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { isGranted: Boolean ->
-        if (isGranted) {
-            setContent { CameraApp(true) }
-        } else {
-            setContent { CameraApp(false) }
-        }
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         cameraExecutor = Executors.newSingleThreadExecutor()
-        requestPermissionLauncher.launch(Manifest.permission.CAMERA)
+        
+        // Removed registerForActivityResult logic from here.
+        // Handled entirely within Compose for better Lifecycle management and to avoid crashes on recreation.
+        setContent {
+            CameraApp()
+        }
     }
 
     override fun onDestroy() {
@@ -80,19 +75,39 @@ class MainActivity : AppCompatActivity() {
     }
 }
 
+@OptIn(ExperimentalPermissionsApi::class)
 @Composable
-fun CameraApp(hasPermission: Boolean) {
-    // Material Theme hook could go here
-    if (hasPermission) {
+fun CameraApp() {
+    // Permission state management using Accompanist
+    val cameraPermissionState = rememberPermissionState(permission = Manifest.permission.CAMERA)
+    
+    // Request permission on launch
+    LaunchedEffect(Unit) {
+        if (!cameraPermissionState.status.isGranted) {
+            cameraPermissionState.launchPermissionRequest()
+        }
+    }
+
+    if (cameraPermissionState.status.isGranted) {
         CameraScreen()
     } else {
+        // Permission Denied / Requesting UI
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color.Black),
             contentAlignment = Alignment.Center
         ) {
-            Text(stringResource(R.string.permission_denied), color = Color.White)
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = stringResource(R.string.permission_required),
+                    color = Color.White,
+                    modifier = Modifier.padding(16.dp)
+                )
+                Button(onClick = { cameraPermissionState.launchPermissionRequest() }) {
+                    Text("Grant Permission")
+                }
+            }
         }
     }
 }
@@ -137,10 +152,16 @@ fun CameraScreen() {
                     detectTapGestures { offset ->
                         focusPoint = offset
                         if (cameraControl != null) {
-                            val factory = SurfaceOrientedMeteringPointFactory(
-                                size.width.toFloat(), size.height.toFloat()
-                            )
-                            // In a real app, apply focus point to cameraControl here
+                            try {
+                                val factory = SurfaceOrientedMeteringPointFactory(
+                                    size.width.toFloat(), size.height.toFloat()
+                                )
+                                val point = factory.createPoint(offset.x, offset.y)
+                                val action = FocusMeteringAction.Builder(point).build()
+                                cameraControl?.startFocusAndMetering(action)
+                            } catch (e: Exception) {
+                                // Ignore touch errors
+                            }
                         }
                     }
                 }
@@ -156,21 +177,27 @@ fun CameraScreen() {
                 update = { previewView ->
                     val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
                     cameraProviderFuture.addListener({
-                        val cameraProvider = cameraProviderFuture.get()
-                        
-                        val preview = Preview.Builder().build().also {
-                            it.setSurfaceProvider(previewView.surfaceProvider)
-                        }
-                        
-                        val imageCapture = ImageCapture.Builder()
-                            .setFlashMode(flashMode)
-                            .build()
-
-                        val cameraSelector = CameraSelector.Builder()
-                            .requireLensFacing(lensFacing)
-                            .build()
-
                         try {
+                            val cameraProvider = cameraProviderFuture.get()
+                            
+                            val preview = Preview.Builder().build().also {
+                                it.setSurfaceProvider(previewView.surfaceProvider)
+                            }
+                            
+                            val imageCapture = ImageCapture.Builder()
+                                .setFlashMode(flashMode)
+                                .build()
+
+                            // Safe Camera Selector
+                            val cameraSelector = if (cameraProvider.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA) && lensFacing == CameraSelector.LENS_FACING_BACK) {
+                                CameraSelector.DEFAULT_BACK_CAMERA
+                            } else if (cameraProvider.hasCamera(CameraSelector.DEFAULT_FRONT_CAMERA) && lensFacing == CameraSelector.LENS_FACING_FRONT) {
+                                CameraSelector.DEFAULT_FRONT_CAMERA
+                            } else {
+                                // Fallback
+                                CameraSelector.DEFAULT_BACK_CAMERA
+                            }
+
                             cameraProvider.unbindAll()
                             val camera = cameraProvider.bindToLifecycle(
                                 lifecycleOwner,
@@ -180,9 +207,8 @@ fun CameraScreen() {
                             )
                             cameraControl = camera.cameraControl
                             camera.cameraControl.setZoomRatio(zoomRatio)
-                            
                         } catch (exc: Exception) {
-                            // Log.e("Camera", "Use case binding failed", exc)
+                            // Camera Init Failed (e.g. Emulator without camera)
                         }
                     }, ContextCompat.getMainExecutor(context))
                 }
@@ -455,25 +481,22 @@ fun LanguageItem(name: String, code: String?) {
     }
 }
 
-// ... Previous helper composables (ZoomButton, IconButton, FocusRing) remain the same ...
-// Re-implementing them briefly to ensure file completeness if overwriting
-
 @Composable
 fun ZoomButton(text: String, isSelected: Boolean, onClick: () -> Unit) {
     Box(
         modifier = Modifier
-            .size(36.dp)
-            .clip(CircleShape)
-            .background(if (isSelected) Color.Black.copy(alpha = 0.6f) else Color.Transparent)
-            .border(1.dp, if (isSelected) Color.Yellow else Color.Transparent, CircleShape)
-            .clickable(onClick = onClick),
+             .size(36.dp)
+             .clip(CircleShape)
+             .background(if (isSelected) Color.Black.copy(alpha = 0.6f) else Color.Transparent)
+             .border(1.dp, if (isSelected) Color.Yellow else Color.Transparent, CircleShape)
+             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Text(
-            text = text,
-            color = if (isSelected) Color.Yellow else Color.White,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Bold
+             text = text,
+             color = if (isSelected) Color.Yellow else Color.White,
+             fontSize = 12.sp,
+             fontWeight = FontWeight.Bold
         )
     }
 }
