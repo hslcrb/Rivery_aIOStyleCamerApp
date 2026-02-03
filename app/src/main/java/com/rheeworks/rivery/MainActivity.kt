@@ -137,9 +137,8 @@ fun CameraScreen() {
                     detectTapGestures { offset ->
                         focusPoint = offset
                         if (cameraControl != null) {
-                            val factory = DisplayOrientedMeteringPointFactory(
-                                size.width.toFloat(), size.height.toFloat(),
-                                cameraControl!!
+                            val factory = SurfaceOrientedMeteringPointFactory(
+                                size.width.toFloat(), size.height.toFloat()
                             )
                             // In a real app, apply focus point to cameraControl here
                         }
