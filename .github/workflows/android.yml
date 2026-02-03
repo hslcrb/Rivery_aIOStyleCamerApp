@@ -1,0 +1,103 @@
+name: Android CI/CD
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  version_bump:
+    runs-on: ubuntu-latest
+    outputs:
+      new_version: ${{ steps.bump.outputs.new_version }}
+      should_release: ${{ steps.bump.outputs.should_release }}
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      
+      - name: Calculate Version
+        id: bump
+        run: |
+          # Get total commit count
+          COMMIT_COUNT=$(git rev-list --count HEAD)
+          
+          # Logic: Increment version every 10 commits
+          # Version format: v0.0.{X} where X = floor(commits / 10)
+          
+          MAJOR=0
+          MINOR=0
+          PATCH=$((COMMIT_COUNT / 10))
+          
+          NEW_VERSION="v$MAJOR.$MINOR.$PATCH"
+          echo "Current Commit Count: $COMMIT_COUNT"
+          echo "Calculated Version: $NEW_VERSION"
+          
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          
+          # Check if this specific commit triggered a version bump (i.e., commit count is exactly divisible by 10)
+          # OR if we just want to release on every push but update the version label periodically.
+          # The user asked: "10번마다는 버전업 자동으로" (Auto version up every 10).
+          # And "커밋푸시 때마다 ... 생성하고 깃헙 릴리즈에 업로드" (Upload to release on every push).
+          # So we release every time, but the VERSION tag might stay the same 9 times out of 10?
+          # Or does "Release" imply a new tag? 
+          # Usually Release = Tag. If we try to release v0.0.0 10 times, GitHub will error or append.
+          # Let's use a "nightly" or "build" tag for intermediate, or just use the calculated version and append the commit hash for the release name.
+          
+          echo "should_release=true" >> $GITHUB_OUTPUT
+
+  build_and_release:
+    needs: version_bump
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: set up JDK 17
+        uses: actions/setup-java@v3
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build with Gradle
+        run: ./gradlew assembleDebug
+
+      # Upload Artifacts to Release
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ needs.version_bump.outputs.new_version }}-${{ github.sha }}
+          name: Release ${{ needs.version_bump.outputs.new_version }} (Build ${{ github.run_number }})
+          files: |
+            app/build/outputs/apk/debug/app-debug.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  docker_build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Log in to the Container registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/${{ github.repository }}/rivery-camera:latest
