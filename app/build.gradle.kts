@@ -65,6 +65,7 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.activity:activity-compose:1.8.2")
     implementation("androidx.appcompat:appcompat:1.6.1") // Added for multi-language support (AppCompatDelegate)
+    implementation("io.coil-kt:coil-compose:2.5.0")
 
     // CameraX
     val camerax_version = "1.3.1"
