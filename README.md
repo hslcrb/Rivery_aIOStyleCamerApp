@@ -36,6 +36,11 @@ cd Rivery_aIOStyleCamerApp
 - **Dependency Management**: Gradle Kotlin DSL
 - **CI/CD**: GitHub Actions
 
+## 📜 License
+Apache License 2.0. See [LICENSE](LICENSE) for details.
+
+© 2008-2026 **Rheehose (Rhee Creative)**. All Rights Reserved.
+
 ---
 
 # Rivery 카메라 앱
@@ -67,7 +72,7 @@ cd Rivery_aIOStyleCamerApp
 ./gradlew assembleRelease
 ```
 
-## 📜 License
-Apache License 2.0. See [LICENSE](LICENSE) for details.
+## 📜 라이선스
+Apache License 2.0. 자세한 내용은 [LICENSE](LICENSE) 파일을 참조하십시오.
 
-© 2008-2026 **Rheehose (Rhee Creative)**. All Rights Reserved.
+© 2008-2026 **Rheehose (Rhee Creative)**. All rights reserved.
