@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    
+    <!-- Camera Body Outline (Subtle Ring) -->
+    <group
+        android:scaleX="0.75"
+        android:scaleY="0.75"
+        android:translateX="13.5"
+        android:translateY="13.5">
+        
+        <!-- Outer Ring (Metallic) -->
+        <path
+            android:fillColor="#48484A"
+            android:pathData="M54,14 C31.9086,14 14,31.9086 14,54 C14,76.0914 31.9086,94 54,94 C76.0914,94 94,76.0914 94,54 C94,31.9086 76.0914,14 54,14 Z M54,8 C79.4051,8 100,28.5949 100,54 C100,79.4051 79.4051,100 54,100 C28.5949,100 8,79.4051 8,54 C8,28.5949 28.5949,8 54,8 Z" />
+            
+        <!-- Lens Housing (Black) -->
+        <path
+            android:fillColor="#000000"
+            android:pathData="M54,18 C34.1178,18 18,34.1178 18,54 C18,73.8822 34.1178,90 54,90 C73.8822,90 90,73.8822 90,54 C90,34.1178 73.8822,18 54,18 Z" />
+            
+        <!-- Lens Glass (Dark Blue-ish) -->
+        <path
+            android:fillColor="#0f1a2b"
+            android:pathData="M54,26 C38.536,26 26,38.536 26,54 C26,69.464 38.536,82 54,82 C69.464,82 82,69.464 82,54 C82,38.536 69.464,26 54,26 Z" />
+            
+        <!-- Inner Pupil (Deep Black) -->
+        <path
+            android:fillColor="#000000"
+            android:pathData="M54,38 C45.1634,38 38,45.1634 38,54 C38,62.8366 45.1634,70 54,70 C62.8366,70 70,62.8366 70,54 C70,45.1634 62.8366,38 54,38 Z" />
+            
+        <!-- Reflection 1 (Top Left) -->
+        <path
+            android:fillColor="#80FFFFFF"
+            android:pathData="M44,40 C42,40 40,42 42,44 C44,46 46,44 44,40 Z" />
+            
+        <!-- Reflection 2 (Bottom Right - Subtle) -->
+        <path
+            android:fillColor="#40ADD8E6"
+            android:pathData="M64,66 C62,66 64,68 66,66 C68,64 66,64 64,66 Z" />
+            
+        <!-- Sensor Dot (Red - like recording) -->
+        <path
+            android:fillColor="#FF3B30"
+            android:pathData="M54,52 C52.8954,52 52,52.8954 52,54 C52,55.1046 52.8954,56 54,56 C55.1046,56 56,55.1046 56,54 C56,52.8954 55.1046,52 54,52 Z" />
+    </group>
+</vector>

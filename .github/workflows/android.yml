@@ -9,7 +9,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       new_version: ${{ steps.bump.outputs.new_version }}
-      should_release: ${{ steps.bump.outputs.should_release }}
     steps:
       - uses: actions/checkout@v3
         with:
@@ -18,32 +17,13 @@ jobs:
       - name: Calculate Version
         id: bump
         run: |
-          # Get total commit count
           COMMIT_COUNT=$(git rev-list --count HEAD)
-          
-          # Logic: Increment version every 10 commits
-          # Version format: v0.0.{X} where X = floor(commits / 10)
-          
           MAJOR=0
           MINOR=0
           PATCH=$((COMMIT_COUNT / 10))
-          
           NEW_VERSION="v$MAJOR.$MINOR.$PATCH"
-          echo "Current Commit Count: $COMMIT_COUNT"
           echo "Calculated Version: $NEW_VERSION"
-          
           echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
-          
-          # Check if this specific commit triggered a version bump (i.e., commit count is exactly divisible by 10)
-          # OR if we just want to release on every push but update the version label periodically.
-          # The user asked: "10번마다는 버전업 자동으로" (Auto version up every 10).
-          # And "커밋푸시 때마다 ... 생성하고 깃헙 릴리즈에 업로드" (Upload to release on every push).
-          # So we release every time, but the VERSION tag might stay the same 9 times out of 10?
-          # Or does "Release" imply a new tag? 
-          # Usually Release = Tag. If we try to release v0.0.0 10 times, GitHub will error or append.
-          # Let's use a "nightly" or "build" tag for intermediate, or just use the calculated version and append the commit hash for the release name.
-          
-          echo "should_release=true" >> $GITHUB_OUTPUT
 
   build_and_release:
     needs: version_bump
@@ -65,10 +45,11 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Build with Gradle
-        run: ./gradlew assembleDebug
+      # Build both Debug and Release APKs
+      # Note: We configured release to use debug signing key in build.gradle.kts
+      - name: Build APKs
+        run: ./gradlew assembleDebug assembleRelease
 
-      # Upload Artifacts to Release
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
@@ -76,6 +57,7 @@ jobs:
           name: Release ${{ needs.version_bump.outputs.new_version }} (Build ${{ github.run_number }})
           files: |
             app/build/outputs/apk/debug/app-debug.apk
+            app/build/outputs/apk/release/app-release.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ic_launcher_background">#1C1C1E</color> <!-- Apple Dark Grey -->
+    <color name="camera_lens_outer">#3A3A3C</color>
+    <color name="camera_lens_inner">#000000</color>
+    <color name="camera_lens_glass">#1A2B45</color>
+    <color name="camera_lens_reflection">#607D8B</color>
+    <color name="camera_body">#C0C0C0</color>
+</resources>
