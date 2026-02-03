@@ -5,13 +5,11 @@ import android.content.Context
 import android.net.Uri
 import android.os.Bundle
 import android.util.Range
-import android.util.Size
 import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.camera.core.*
 import androidx.camera.core.resolutionselector.AspectRatioStrategy
-import androidx.camera.core.resolutionselector.QualitySelector
 import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -44,6 +42,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -224,13 +223,14 @@ fun CameraScreen(onOpenGallery: () -> Unit) {
                             }
                             
                             // High Quality strategy
+                            // High Quality strategy
                             val resolutionSelector = ResolutionSelector.Builder()
-                                .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_fallback_AUTO_STRATEGY)
+                                .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
                                 .setResolutionStrategy(
                                     if (selectedQuality == CameraQuality.HIGH) 
                                         ResolutionStrategy.HIGHEST_AVAILABLE_STRATEGY 
                                     else 
-                                        ResolutionStrategy.RATIONAL_BEST_STRATEGY
+                                        ResolutionStrategy.HIGHEST_AVAILABLE_STRATEGY
                                 )
                                 .build()
 
