@@ -1,21 +1,27 @@
 package com.rheeworks.rivery
 
 import android.Manifest
-import android.content.Context
+import android.net.Uri
 import android.os.Bundle
-import android.view.ViewGroup
+import android.util.Range
+import android.widget.Toast
 import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
@@ -39,6 +45,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
@@ -49,6 +56,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.core.content.ContextCompat
 import androidx.core.os.LocaleListCompat
+import coil.compose.rememberAsyncImagePainter
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
@@ -61,9 +69,6 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         cameraExecutor = Executors.newSingleThreadExecutor()
-        
-        // Removed registerForActivityResult logic from here.
-        // Handled entirely within Compose for better Lifecycle management and to avoid crashes on recreation.
         setContent {
             CameraApp()
         }
@@ -73,15 +78,20 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
         cameraExecutor.shutdown()
     }
+
+    fun getExecutor() = cameraExecutor
+}
+
+enum class AppScreen {
+    CAMERA, GALLERY
 }
 
 @OptIn(ExperimentalPermissionsApi::class)
 @Composable
 fun CameraApp() {
-    // Permission state management using Accompanist
     val cameraPermissionState = rememberPermissionState(permission = Manifest.permission.CAMERA)
-    
-    // Request permission on launch
+    var currentScreen by remember { mutableStateOf(AppScreen.CAMERA) }
+
     LaunchedEffect(Unit) {
         if (!cameraPermissionState.status.isGranted) {
             cameraPermissionState.launchPermissionRequest()
@@ -89,53 +99,55 @@ fun CameraApp() {
     }
 
     if (cameraPermissionState.status.isGranted) {
-        CameraScreen()
+        when (currentScreen) {
+            AppScreen.CAMERA -> CameraScreen(
+                onOpenGallery = { currentScreen = AppScreen.GALLERY }
+            )
+            AppScreen.GALLERY -> GalleryScreen(
+                onBack = { currentScreen = AppScreen.CAMERA }
+            )
+        }
     } else {
-        // Permission Denied / Requesting UI
         Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black),
+            modifier = Modifier.fillMaxSize().background(Color.Black),
             contentAlignment = Alignment.Center
         ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    text = stringResource(R.string.permission_required),
-                    color = Color.White,
-                    modifier = Modifier.padding(16.dp)
-                )
-                Button(onClick = { cameraPermissionState.launchPermissionRequest() }) {
-                    Text("Grant Permission")
-                }
-            }
+            Text(stringResource(R.string.permission_required), color = Color.White)
         }
     }
 }
 
 @Composable
-fun CameraScreen() {
+fun CameraScreen(onOpenGallery: () -> Unit) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    
-    // UI State
+    val cameraUtils = remember { CameraUtils(context) }
+    val mainActivity = context as? MainActivity
+
+    // Camera State
     var lensFacing by remember { mutableIntStateOf(CameraSelector.LENS_FACING_BACK) }
     var flashMode by remember { mutableIntStateOf(ImageCapture.FLASH_MODE_OFF) }
-    var selectedModeIndex by remember { mutableIntStateOf(3) } // Default to PHOTO
-    
-    val modes = listOf(
-        stringResource(R.string.mode_timelapse),
-        stringResource(R.string.mode_slomo),
-        stringResource(R.string.mode_video),
-        stringResource(R.string.mode_photo),
-        stringResource(R.string.mode_portrait),
-        stringResource(R.string.mode_pano)
-    )
-    
     var zoomRatio by remember { mutableFloatStateOf(1f) }
     var cameraControl: CameraControl? by remember { mutableStateOf(null) }
+    var cameraInfo: CameraInfo? by remember { mutableStateOf(null) }
+    var imageCapture: ImageCapture? by remember { mutableStateOf(null) }
+
+    // UI/Animation State
     var focusPoint by remember { mutableStateOf<Offset?>(null) }
     var isShutterPressed by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
+    var latestImageUri by remember { mutableStateOf<Uri?>(null) }
+    
+    // Exposure State
+    var exposureIndex by remember { mutableFloatStateOf(0f) } // Adjusted EV index
+    var exposureRange by remember { mutableStateOf<Range<Int>?>(null) }
+    var showExposureSlider by remember { mutableStateOf(false) }
+    
+    // Load latest image for thumbnail
+    LaunchedEffect(Unit) {
+        val uris = loadMedia(context)
+        if (uris.isNotEmpty()) latestImageUri = uris.first()
+    }
 
     val shutterScale by animateFloatAsState(
         targetValue = if (isShutterPressed) 0.85f else 1f,
@@ -143,14 +155,19 @@ fun CameraScreen() {
     )
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
-        
-        // 1. Camera Preview
+
+        // ------------------------------------------------------------
+        // 1. Camera Preview & Touch Handling
+        // ------------------------------------------------------------
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .pointerInput(Unit) {
                     detectTapGestures { offset ->
                         focusPoint = offset
+                        showExposureSlider = true
+                        exposureIndex = 0f // Reset EV on new focus
+                        
                         if (cameraControl != null) {
                             try {
                                 val factory = SurfaceOrientedMeteringPointFactory(
@@ -159,9 +176,24 @@ fun CameraScreen() {
                                 val point = factory.createPoint(offset.x, offset.y)
                                 val action = FocusMeteringAction.Builder(point).build()
                                 cameraControl?.startFocusAndMetering(action)
-                            } catch (e: Exception) {
-                                // Ignore touch errors
-                            }
+                                cameraControl?.setExposureCompensationIndex(0) // Reset EV hardware
+                            } catch (e: Exception) { }
+                        }
+                    }
+                }
+                .pointerInput(Unit) {
+                    detectVerticalDragGestures { change, dragAmount ->
+                        if (showExposureSlider && exposureRange != null) {
+                            change.consume()
+                            // Drag up -> Increase EV, Down -> Decrease
+                            // Map drag pixels to EV range approximately
+                            val range = exposureRange!!
+                            val sensitivity = 0.05f
+                            val newValue = (exposureIndex - dragAmount * sensitivity).coerceIn(
+                                range.lower.toFloat(), range.upper.toFloat()
+                            )
+                            exposureIndex = newValue
+                            cameraControl?.setExposureCompensationIndex(newValue.toInt())
                         }
                     }
                 }
@@ -179,361 +211,314 @@ fun CameraScreen() {
                     cameraProviderFuture.addListener({
                         try {
                             val cameraProvider = cameraProviderFuture.get()
-                            
                             val preview = Preview.Builder().build().also {
                                 it.setSurfaceProvider(previewView.surfaceProvider)
                             }
                             
-                            val imageCapture = ImageCapture.Builder()
+                            val newImageCapture = ImageCapture.Builder()
                                 .setFlashMode(flashMode)
+                                .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY) // Fast capture
                                 .build()
+                            
+                            imageCapture = newImageCapture
 
-                            // Safe Camera Selector
-                            val cameraSelector = if (cameraProvider.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA) && lensFacing == CameraSelector.LENS_FACING_BACK) {
-                                CameraSelector.DEFAULT_BACK_CAMERA
-                            } else if (cameraProvider.hasCamera(CameraSelector.DEFAULT_FRONT_CAMERA) && lensFacing == CameraSelector.LENS_FACING_FRONT) {
-                                CameraSelector.DEFAULT_FRONT_CAMERA
-                            } else {
-                                // Fallback
-                                CameraSelector.DEFAULT_BACK_CAMERA
-                            }
+                            val cameraSelector = CameraSelector.Builder()
+                                .requireLensFacing(lensFacing)
+                                .build()
 
                             cameraProvider.unbindAll()
                             val camera = cameraProvider.bindToLifecycle(
                                 lifecycleOwner,
                                 cameraSelector,
                                 preview,
-                                imageCapture
+                                newImageCapture
                             )
                             cameraControl = camera.cameraControl
+                            cameraInfo = camera.cameraInfo
+                            exposureRange = camera.cameraInfo.exposureState.exposureCompensationRange
                             camera.cameraControl.setZoomRatio(zoomRatio)
-                        } catch (exc: Exception) {
-                            // Camera Init Failed (e.g. Emulator without camera)
-                        }
+                        } catch (exc: Exception) { }
                     }, ContextCompat.getMainExecutor(context))
                 }
             )
             
+            // Focus & Exposure UI
             if (focusPoint != null) {
                 FocusRing(offset = focusPoint!!)
+                if (showExposureSlider) {
+                    // Draw Sun icon slider next to focus ring
+                    ExposureSunSlider(
+                        focusOffset = focusPoint!!, 
+                        value = exposureIndex, 
+                        range = exposureRange
+                    )
+                }
+                
+                // Auto-hide slider after 3 seconds of inactivity
                 LaunchedEffect(focusPoint) {
-                    kotlinx.coroutines.delay(1000)
+                    kotlinx.coroutines.delay(3000)
+                    showExposureSlider = false
                     focusPoint = null
                 }
             }
         }
 
-        // 2. Top Bar
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 16.dp, start = 8.dp, end = 8.dp)
-                .statusBarsPadding(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(
-                onClick = { 
-                    flashMode = when (flashMode) {
-                        ImageCapture.FLASH_MODE_OFF -> ImageCapture.FLASH_MODE_ON
-                        ImageCapture.FLASH_MODE_ON -> ImageCapture.FLASH_MODE_AUTO
-                        else -> ImageCapture.FLASH_MODE_OFF
-                    }
+        // ------------------------------------------------------------
+        // 2. UI Overlay (Top Bar)
+        // ------------------------------------------------------------
+        TopControlBar(
+            flashMode = flashMode,
+            onFlashToggle = {
+                flashMode = when (flashMode) {
+                    ImageCapture.FLASH_MODE_OFF -> ImageCapture.FLASH_MODE_ON
+                    ImageCapture.FLASH_MODE_ON -> ImageCapture.FLASH_MODE_AUTO
+                    else -> ImageCapture.FLASH_MODE_OFF
                 }
-            ) {
-                Icon(
-                    imageVector = when (flashMode) {
-                        ImageCapture.FLASH_MODE_ON -> Icons.Default.FlashOn
-                        ImageCapture.FLASH_MODE_AUTO -> Icons.Default.FlashAuto
-                        else -> Icons.Default.FlashOff
-                    },
-                    contentDescription = "Flash",
-                    tint = if (flashMode == ImageCapture.FLASH_MODE_OFF) Color.White else Color.Yellow,
-                    modifier = Modifier.size(28.dp)
-                )
-            }
+            },
+            onSettingsClick = { showSettings = true }
+        )
 
-            // Live Photo Indicator
-            Box(
-                modifier = Modifier
-                    .size(24.dp)
-                    .clip(CircleShape)
-                    .border(1.dp, Color.White, CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Box(modifier = Modifier.size(12.dp).clip(CircleShape).background(Color.Yellow))
-            }
-            
-            // Settings Button
-            IconButton(onClick = { showSettings = true }) {
-                 Icon(
-                     imageVector = Icons.Default.Settings,
-                     contentDescription = "Settings",
-                     tint = Color.White,
-                     modifier = Modifier.size(28.dp)
-                 )
-            }
-        }
-
+        // ------------------------------------------------------------
         // 3. Bottom Controls
+        // ------------------------------------------------------------
         Column(
             modifier = Modifier
-                .fillMaxWidth()
                 .align(Alignment.BottomCenter)
-                .background(Color.Black.copy(alpha = 0.4f))
-                .padding(bottom = 32.dp)
+                .fillMaxWidth()
+                .background(Color.Black.copy(alpha = 0.5f))
+                .padding(bottom = 30.dp, top = 10.dp)
         ) {
-            // Zoom
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 16.dp),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                 listOf(0.5f, 1f, 2f, 5f).forEach { scale -> 
-                     val isSelected = zoomRatio == scale
-                     ZoomButton(
-                         text = "${scale.toString().removeSuffix(".0")}x",
-                         isSelected = isSelected,
-                         onClick = { zoomRatio = scale }
-                     )
-                     Spacer(modifier = Modifier.width(16.dp))
-                 }
-            }
-
-            // Mode Selector
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(40.dp)
-            ) {
-                 LazyRow(
-                     modifier = Modifier.fillMaxWidth(),
-                     contentPadding = PaddingValues(horizontal = (LocalContext.current.resources.displayMetrics.widthPixels / 2).dp - 30.dp), // Approx center
-                     horizontalArrangement = Arrangement.Center
-                 ) {
-                     itemsIndexed(modes) { index, mode ->
-                         Text(
-                             text = mode,
-                             color = if (index == selectedModeIndex) Color.Yellow else Color.White,
-                             fontSize = 13.sp,
-                             fontWeight = FontWeight.Bold,
-                             letterSpacing = 1.sp,
-                             modifier = Modifier
-                                 .padding(horizontal = 12.dp)
-                                 .clickable { selectedModeIndex = index }
-                         )
-                     }
-                 }
-            }
+            // Zoom Controls
+            ZoomControls(zoomRatio) { zoomRatio = it }
             
-            Spacer(modifier = Modifier.height(20.dp))
-
-            // Shutter
+            Spacer(modifier = Modifier.height(10.dp))
+            
+            // Mode List (Visual Only)
+            ModeSelector()
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            // Main Controls (Gallery, Shutter, Flip)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 36.dp),
+                    .padding(horizontal = 40.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(Color.DarkGray)
-                        .border(1.dp, Color.White.copy(alpha = 0.6f), RoundedCornerShape(6.dp))
+                // Gallery Thumbnail
+                GalleryThumbnail(latestImageUri, onOpenGallery)
+
+                // Shutter Button
+                ShutterButton(
+                    scale = shutterScale,
+                    onPress = { isShutterPressed = true },
+                    onRelease = { isShutterPressed = false },
+                    onTap = {
+                         if(imageCapture != null) {
+                             cameraUtils.takePhoto(
+                                 imageCapture!!,
+                                 onImageCaptured = { uri ->
+                                     latestImageUri = uri
+                                     // Optional: Show "saved" toast or flash
+                                 },
+                                 onError = { /* Handle error */ }
+                             )
+                         }
+                    }
                 )
 
-                Box(
-                    modifier = Modifier
-                        .size(80.dp)
-                        .scale(shutterScale)
-                        .border(4.dp, Color.White, CircleShape)
-                        .padding(5.dp)
-                        .pointerInput(Unit) {
-                            detectTapGestures(
-                                onPress = {
-                                    isShutterPressed = true
-                                    tryAwaitRelease()
-                                    isShutterPressed = false
-                                },
-                                onTap = { /* Capture */ }
-                            )
-                        },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clip(CircleShape)
-                            .background(Color.White)
-                    )
-                }
-
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clip(CircleShape)
-                        .background(Color.White.copy(alpha = 0.15f))
-                        .clickable {
-                            lensFacing = if (lensFacing == CameraSelector.LENS_FACING_BACK) 
-                                CameraSelector.LENS_FACING_FRONT 
-                            else 
-                                CameraSelector.LENS_FACING_BACK
-                        },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Loop,
-                        contentDescription = "Flip",
-                        tint = Color.White,
-                        modifier = Modifier.size(28.dp)
-                    )
+                // Flip Camera
+                FlipButton {
+                    lensFacing = if (lensFacing == CameraSelector.LENS_FACING_BACK) 
+                        CameraSelector.LENS_FACING_FRONT 
+                    else 
+                        CameraSelector.LENS_FACING_BACK
                 }
             }
         }
 
-        // Settings Dialog
         if (showSettings) {
-            SettingsDialog(onDismiss = { showSettings = false })
+            SettingsDialog { showSettings = false }
         }
     }
 }
 
-@Composable
-fun SettingsDialog(onDismiss: () -> Unit) {
-    Dialog(onDismissRequest = onDismiss) {
-        Card(
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF1C1C1E)), // Dark Grey
-            modifier = Modifier.fillMaxWidth().padding(16.dp)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(
-                    text = stringResource(R.string.settings_title),
-                    color = Color.White,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(bottom = 16.dp)
-                )
-
-                Text(
-                    text = stringResource(R.string.language_option),
-                    color = Color.Gray,
-                    fontSize = 14.sp,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-
-                LanguageItem(stringResource(R.string.lang_system), null)
-                LanguageItem(stringResource(R.string.lang_en), "en")
-                LanguageItem(stringResource(R.string.lang_ko), "ko")
-                LanguageItem(stringResource(R.string.lang_ja), "ja")
-
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                Button(
-                    onClick = onDismiss,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray)
-                ) {
-                    Text(stringResource(R.string.cancel), color = Color.White)
-                }
-            }
-        }
-    }
-}
+// ----------------------------------------------------------------
+// Sub-Components
+// ----------------------------------------------------------------
 
 @Composable
-fun LanguageItem(name: String, code: String?) {
-    val context = LocalContext.current
-    val currentLocales = AppCompatDelegate.getApplicationLocales()
-    val isSelected = if (code == null) {
-        currentLocales.isEmpty
-    } else {
-        currentLocales.toLanguageTags().contains(code)
-    }
-
+fun TopControlBar(flashMode: Int, onFlashToggle: () -> Unit, onSettingsClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable {
-                val localeList = if (code == null) {
-                    LocaleListCompat.getEmptyLocaleList()
-                } else {
-                    LocaleListCompat.forLanguageTags(code)
-                }
-                AppCompatDelegate.setApplicationLocales(localeList)
-            }
-            .padding(vertical = 12.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+            .padding(16.dp)
+            .statusBarsPadding(),
+        horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Text(text = name, color = Color.White, fontSize = 16.sp)
-        if (isSelected) {
+        IconButton(onClick = onFlashToggle) {
             Icon(
-                imageVector = Icons.Default.Check,
-                contentDescription = "Selected",
-                tint = Color.Yellow
+                imageVector = when (flashMode) {
+                    ImageCapture.FLASH_MODE_ON -> Icons.Default.FlashOn
+                    ImageCapture.FLASH_MODE_AUTO -> Icons.Default.FlashAuto
+                    else -> Icons.Default.FlashOff
+                },
+                contentDescription = "Flash",
+                tint = if (flashMode == ImageCapture.FLASH_MODE_OFF) Color.White else Color.Yellow
+            )
+        }
+        
+        // Live Photo / Timer indicators (static for now)
+         Box(
+            modifier = Modifier
+                .size(24.dp)
+                .clip(CircleShape)
+                .border(1.dp, Color.White, CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(modifier = Modifier.size(12.dp).clip(CircleShape).background(Color.Yellow))
+        }
+
+        IconButton(onClick = onSettingsClick) {
+            Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.White)
+        }
+    }
+}
+
+@Composable
+fun ZoomControls(currentRatio: Float, onZoomChange: (Float) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.Center
+    ) {
+        val levels = listOf(0.5f, 1f, 2f, 5f)
+        levels.forEach { level ->
+            ZoomButton(
+                text = "${level.toString().removeSuffix(".0")}x",
+                isSelected = currentRatio == level,
+                onClick = { onZoomChange(level) }
+            )
+            Spacer(modifier = Modifier.width(16.dp))
+        }
+    }
+}
+
+@Composable
+fun ModeSelector() {
+    val modes = listOf(
+        stringResource(R.string.mode_video),
+        stringResource(R.string.mode_photo),
+        stringResource(R.string.mode_portrait)
+    )
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.Center
+    ) {
+        modes.forEachIndexed { index, mode ->
+            Text(
+                text = mode,
+                color = if (index == 1) Color.Yellow else Color.Gray, // Highlight PHOTO
+                fontWeight = FontWeight.Bold,
+                fontSize = 13.sp,
+                modifier = Modifier.padding(horizontal = 8.dp)
             )
         }
     }
 }
 
 @Composable
-fun ZoomButton(text: String, isSelected: Boolean, onClick: () -> Unit) {
+fun GalleryThumbnail(uri: Uri?, onClick: () -> Unit) {
     Box(
         modifier = Modifier
-             .size(36.dp)
-             .clip(CircleShape)
-             .background(if (isSelected) Color.Black.copy(alpha = 0.6f) else Color.Transparent)
-             .border(1.dp, if (isSelected) Color.Yellow else Color.Transparent, CircleShape)
-             .clickable(onClick = onClick),
+            .size(48.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color.DarkGray)
+            .border(1.dp, Color.White, RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+    ) {
+        if (uri != null) {
+            Image(
+                painter = rememberAsyncImagePainter(uri),
+                contentDescription = "Gallery",
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
+            )
+        }
+    }
+}
+
+@Composable
+fun ShutterButton(scale: Float, onPress: () -> Unit, onRelease: () -> Unit, onTap: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .size(72.dp)
+            .scale(scale)
+            .border(4.dp, Color.White, CircleShape)
+            .padding(4.dp)
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onPress = {
+                        onPress()
+                        tryAwaitRelease()
+                        onRelease()
+                    },
+                    onTap = { onTap() }
+                )
+            },
         contentAlignment = Alignment.Center
     ) {
-        Text(
-             text = text,
-             color = if (isSelected) Color.Yellow else Color.White,
-             fontSize = 12.sp,
-             fontWeight = FontWeight.Bold
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(CircleShape)
+                .background(Color.White)
         )
     }
 }
 
 @Composable
-fun IconButton(onClick: () -> Unit, content: @Composable () -> Unit) {
+fun FlipButton(onClick: () -> Unit) {
     Box(
         modifier = Modifier
-             .size(44.dp)
-             .clip(CircleShape)
-             .clickable(
-                 interactionSource = remember { MutableInteractionSource() },
-                 indication = null, 
-                 onClick = onClick
-             ),
+            .size(48.dp)
+            .clip(CircleShape)
+            .background(Color.White.copy(alpha = 0.2f))
+            .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
-        content()
+        Icon(Icons.Outlined.Loop, contentDescription = "Flip", tint = Color.White)
     }
 }
 
 @Composable
-fun FocusRing(offset: Offset) {
+fun ExposureSunSlider(focusOffset: Offset, value: Float, range: Range<Int>?) {
+    if (range == null) return
+    
+    // Draw a simple vertical line and a sun icon moving up/down
     Canvas(modifier = Modifier.fillMaxSize()) {
-        val size = 70.dp.toPx()
-        val topLeft = Offset(offset.x - size / 2, offset.y - size / 2)
-        drawRect(
+        val sliderHeight = 150.dp.toPx()
+        val sliderX = focusOffset.x + 60.dp.toPx() // To the right of focus ring
+        val centerY = focusOffset.y
+        
+        // Vertical Line
+        drawLine(
             color = Color.Yellow,
-            topLeft = topLeft,
-            size = androidx.compose.ui.geometry.Size(size, size),
-            style = Stroke(width = 1.5.dp.toPx())
+            start = Offset(sliderX, centerY - sliderHeight / 2),
+            end = Offset(sliderX, centerY + sliderHeight / 2),
+            strokeWidth = 2.dp.toPx()
         )
-         drawLine(
-             color = Color.Yellow,
-             start = Offset(topLeft.x + size + 10f, topLeft.y + size/2 - 15f),
-             end = Offset(topLeft.x + size + 10f, topLeft.y + size/2 + 15f),
-             strokeWidth = 1.dp.toPx()
+        
+        // Sun Indicator
+        // Normalize value to y-position
+        val normalized = (value - range.lower) / (range.upper - range.lower) // 0..1
+        val safeNormalized = if(normalized.isNaN()) 0.5f else normalized
+        val indicatorY = (centerY + sliderHeight/2) - (safeNormalized * sliderHeight)
+        
+        drawCircle(
+            color = Color.Yellow,
+            radius = 6.dp.toPx(),
+            center = Offset(sliderX, indicatorY)
         )
     }
 }
