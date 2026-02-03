@@ -1,18 +1,16 @@
 package com.rheeworks.rivery
 
 import android.Manifest
-import android.content.Context
 import android.os.Bundle
 import android.view.ViewGroup
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -20,18 +18,20 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.FlashAuto
 import androidx.compose.material.icons.filled.FlashOff
 import androidx.compose.material.icons.filled.FlashOn
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Loop
-import androidx.compose.material3.Icon
-import androidx.compose.material3.Text
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,21 +39,23 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
 import androidx.core.content.ContextCompat
+import androidx.core.os.LocaleListCompat
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
-class MainActivity : ComponentActivity() {
+// Changed to AppCompatActivity for modern Localization support
+class MainActivity : AppCompatActivity() {
     private lateinit var cameraExecutor: ExecutorService
 
     private val requestPermissionLauncher = registerForActivityResult(
@@ -80,6 +82,7 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun CameraApp(hasPermission: Boolean) {
+    // Material Theme hook could go here
     if (hasPermission) {
         CameraScreen()
     } else {
@@ -89,7 +92,7 @@ fun CameraApp(hasPermission: Boolean) {
                 .background(Color.Black),
             contentAlignment = Alignment.Center
         ) {
-            Text("Camera permission denied", color = Color.White)
+            Text(stringResource(R.string.permission_denied), color = Color.White)
         }
     }
 }
@@ -103,17 +106,22 @@ fun CameraScreen() {
     var lensFacing by remember { mutableIntStateOf(CameraSelector.LENS_FACING_BACK) }
     var flashMode by remember { mutableIntStateOf(ImageCapture.FLASH_MODE_OFF) }
     var selectedModeIndex by remember { mutableIntStateOf(3) } // Default to PHOTO
-    val modes = listOf("TIME-LAPSE", "SLO-MO", "VIDEO", "PHOTO", "PORTRAIT", "PANO")
     
-    // Camera Control State
+    val modes = listOf(
+        stringResource(R.string.mode_timelapse),
+        stringResource(R.string.mode_slomo),
+        stringResource(R.string.mode_video),
+        stringResource(R.string.mode_photo),
+        stringResource(R.string.mode_portrait),
+        stringResource(R.string.mode_pano)
+    )
+    
     var zoomRatio by remember { mutableFloatStateOf(1f) }
     var cameraControl: CameraControl? by remember { mutableStateOf(null) }
-    
-    // Focus animation state
     var focusPoint by remember { mutableStateOf<Offset?>(null) }
-    
-    // Animation for Shutter
     var isShutterPressed by remember { mutableStateOf(false) }
+    var showSettings by remember { mutableStateOf(false) }
+
     val shutterScale by animateFloatAsState(
         targetValue = if (isShutterPressed) 0.85f else 1f,
         label = "shutter"
@@ -121,30 +129,20 @@ fun CameraScreen() {
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         
-        // ------------------------------------------------------------
-        // 1. Camera Preview with Gestures (Zoom & Focus)
-        // ------------------------------------------------------------
+        // 1. Camera Preview
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .pointerInput(Unit) {
                     detectTapGestures { offset ->
                         focusPoint = offset
-                        
-                        // Convert UI coordinates to Camera coordinates (0.0 - 1.0)
-                        val factory = DisplayOrientedMeteringPointFactory(
-                            size.width.toFloat(), size.height.toFloat(),
-                            cameraControl!!, // Rough assumption for demo
-                            // In real app, bind preview aspect ratio logic
-                        )
-                        /* 
-                           Note: Creating MeteringPoint requires CameraControl logic or 
-                           using the internal camera methods. 
-                           For this UI demo, we simulate the visual feedback primarily. 
-                        */
-                        
-                        // Reset focus indicator after 1s
-                        // logic handled in LaunchedEffect below or separate simplified effect
+                        if (cameraControl != null) {
+                            val factory = DisplayOrientedMeteringPointFactory(
+                                size.width.toFloat(), size.height.toFloat(),
+                                cameraControl!!
+                            )
+                            // In a real app, apply focus point to cameraControl here
+                        }
                     }
                 }
         ) {
@@ -191,7 +189,6 @@ fun CameraScreen() {
                 }
             )
             
-            // Focus Indicator
             if (focusPoint != null) {
                 FocusRing(offset = focusPoint!!)
                 LaunchedEffect(focusPoint) {
@@ -201,18 +198,15 @@ fun CameraScreen() {
             }
         }
 
-        // ------------------------------------------------------------
-        // 2. Top Bar (Glassmorphism / Transparent)
-        // ------------------------------------------------------------
+        // 2. Top Bar
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 16.dp, start = 8.dp, end = 8.dp) // Status bar spacing
-                .statusBarsPadding(), // Handle notches
+                .padding(top = 16.dp, start = 8.dp, end = 8.dp)
+                .statusBarsPadding(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Flash Toggle
             IconButton(
                 onClick = { 
                     flashMode = when (flashMode) {
@@ -234,46 +228,37 @@ fun CameraScreen() {
                 )
             }
 
-            // Top Center Indicators (Like 'RAW' or 'Live')
-            Row(
-                 verticalAlignment = Alignment.CenterVertically
+            // Live Photo Indicator
+            Box(
+                modifier = Modifier
+                    .size(24.dp)
+                    .clip(CircleShape)
+                    .border(1.dp, Color.White, CircleShape),
+                contentAlignment = Alignment.Center
             ) {
-                 // Live Photo Icon (Circle in Circle)
-                 Box(
-                     modifier = Modifier
-                         .size(24.dp)
-                         .clip(CircleShape)
-                         .border(1.dp, Color.White, CircleShape),
-                     contentAlignment = Alignment.Center
-                 ) {
-                     Box(modifier = Modifier.size(12.dp).clip(CircleShape).background(Color.Yellow)) // Live ON
-                 }
+                Box(modifier = Modifier.size(12.dp).clip(CircleShape).background(Color.Yellow))
             }
             
-            // Settings / More
-            IconButton(onClick = { /* TODO */ }) {
-                 // Using a placeholder for "Filter" or "Settings"
+            // Settings Button
+            IconButton(onClick = { showSettings = true }) {
                  Icon(
-                     imageVector = Icons.Default.FlashOff, // Should be exposure or filters
+                     imageVector = Icons.Default.Settings,
                      contentDescription = "Settings",
-                     tint = Color.Transparent, // Hidden for symmetry or replaced
+                     tint = Color.White,
                      modifier = Modifier.size(28.dp)
                  )
             }
         }
 
-        // ------------------------------------------------------------
-        // 3. Bottom Control Complex
-        // ------------------------------------------------------------
+        // 3. Bottom Controls
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .align(Alignment.BottomCenter)
-                .background(Color.Black.copy(alpha = 0.4f)) // Semi-transparent scrim
+                .background(Color.Black.copy(alpha = 0.4f))
                 .padding(bottom = 32.dp)
         ) {
-            
-            // Zoom Controls (0.5x, 1x, 2x, 5x)
+            // Zoom
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -292,19 +277,15 @@ fun CameraScreen() {
                  }
             }
 
-            // Scrollable Mode Selector
+            // Mode Selector
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(40.dp)
             ) {
-                 val listState = rememberLazyListState()
-                 // Simplification: Displaying static centered list for UI feel
-                 // In real app: Calculate offsets and snap
                  LazyRow(
-                     state = listState,
                      modifier = Modifier.fillMaxWidth(),
-                     contentPadding = PaddingValues(horizontal = 150.dp), // Initial padding to center first items
+                     contentPadding = PaddingValues(horizontal = (LocalContext.current.resources.displayMetrics.widthPixels / 2).dp - 30.dp), // Approx center
                      horizontalArrangement = Arrangement.Center
                  ) {
                      itemsIndexed(modes) { index, mode ->
@@ -324,7 +305,7 @@ fun CameraScreen() {
             
             Spacer(modifier = Modifier.height(20.dp))
 
-            // Shutter Area
+            // Shutter
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -332,7 +313,6 @@ fun CameraScreen() {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Gallery Thumbnail (left)
                 Box(
                     modifier = Modifier
                         .size(48.dp)
@@ -341,13 +321,12 @@ fun CameraScreen() {
                         .border(1.dp, Color.White.copy(alpha = 0.6f), RoundedCornerShape(6.dp))
                 )
 
-                // Shutter Button (center)
                 Box(
                     modifier = Modifier
                         .size(80.dp)
                         .scale(shutterScale)
                         .border(4.dp, Color.White, CircleShape)
-                        .padding(5.dp) // inner spacing
+                        .padding(5.dp)
                         .pointerInput(Unit) {
                             detectTapGestures(
                                 onPress = {
@@ -355,7 +334,7 @@ fun CameraScreen() {
                                     tryAwaitRelease()
                                     isShutterPressed = false
                                 },
-                                onTap = { /* Capture Action */ }
+                                onTap = { /* Capture */ }
                             )
                         },
                     contentAlignment = Alignment.Center
@@ -368,7 +347,6 @@ fun CameraScreen() {
                     )
                 }
 
-                // Flip Camera (right)
                 Box(
                     modifier = Modifier
                         .size(48.dp)
@@ -391,8 +369,95 @@ fun CameraScreen() {
                 }
             }
         }
+
+        // Settings Dialog
+        if (showSettings) {
+            SettingsDialog(onDismiss = { showSettings = false })
+        }
     }
 }
+
+@Composable
+fun SettingsDialog(onDismiss: () -> Unit) {
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF1C1C1E)), // Dark Grey
+            modifier = Modifier.fillMaxWidth().padding(16.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    text = stringResource(R.string.settings_title),
+                    color = Color.White,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+
+                Text(
+                    text = stringResource(R.string.language_option),
+                    color = Color.Gray,
+                    fontSize = 14.sp,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+
+                LanguageItem(stringResource(R.string.lang_system), null)
+                LanguageItem(stringResource(R.string.lang_en), "en")
+                LanguageItem(stringResource(R.string.lang_ko), "ko")
+                LanguageItem(stringResource(R.string.lang_ja), "ja")
+
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                Button(
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray)
+                ) {
+                    Text(stringResource(R.string.cancel), color = Color.White)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun LanguageItem(name: String, code: String?) {
+    val context = LocalContext.current
+    val currentLocales = AppCompatDelegate.getApplicationLocales()
+    val isSelected = if (code == null) {
+        currentLocales.isEmpty
+    } else {
+        currentLocales.toLanguageTags().contains(code)
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable {
+                val localeList = if (code == null) {
+                    LocaleListCompat.getEmptyLocaleList()
+                } else {
+                    LocaleListCompat.forLanguageTags(code)
+                }
+                AppCompatDelegate.setApplicationLocales(localeList)
+            }
+            .padding(vertical = 12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(text = name, color = Color.White, fontSize = 16.sp)
+        if (isSelected) {
+            Icon(
+                imageVector = Icons.Default.Check,
+                contentDescription = "Selected",
+                tint = Color.Yellow
+            )
+        }
+    }
+}
+
+// ... Previous helper composables (ZoomButton, IconButton, FocusRing) remain the same ...
+// Re-implementing them briefly to ensure file completeness if overwriting
 
 @Composable
 fun ZoomButton(text: String, isSelected: Boolean, onClick: () -> Unit) {
@@ -401,11 +466,7 @@ fun ZoomButton(text: String, isSelected: Boolean, onClick: () -> Unit) {
             .size(36.dp)
             .clip(CircleShape)
             .background(if (isSelected) Color.Black.copy(alpha = 0.6f) else Color.Transparent)
-            .border(
-                 width = 1.dp, 
-                 color = if (isSelected) Color.Yellow else Color.Transparent, 
-                 shape = CircleShape
-            )
+            .border(1.dp, if (isSelected) Color.Yellow else Color.Transparent, CircleShape)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
@@ -426,7 +487,7 @@ fun IconButton(onClick: () -> Unit, content: @Composable () -> Unit) {
              .clip(CircleShape)
              .clickable(
                  interactionSource = remember { MutableInteractionSource() },
-                 indication = null, // No ripple for cleaner look
+                 indication = null, 
                  onClick = onClick
              ),
         contentAlignment = Alignment.Center
@@ -437,20 +498,16 @@ fun IconButton(onClick: () -> Unit, content: @Composable () -> Unit) {
 
 @Composable
 fun FocusRing(offset: Offset) {
-    // A yellow square that blinks
     Canvas(modifier = Modifier.fillMaxSize()) {
         val size = 70.dp.toPx()
         val topLeft = Offset(offset.x - size / 2, offset.y - size / 2)
-        
         drawRect(
             color = Color.Yellow,
             topLeft = topLeft,
             size = androidx.compose.ui.geometry.Size(size, size),
             style = Stroke(width = 1.5.dp.toPx())
         )
-        
-        // Little "Sun" indicator on the side (Simulated)
-        drawLine(
+         drawLine(
              color = Color.Yellow,
              start = Offset(topLeft.x + size + 10f, topLeft.y + size/2 - 15f),
              end = Offset(topLeft.x + size + 10f, topLeft.y + size/2 + 15f),
